@@ -37,103 +37,7 @@
 
     <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
     <script src="https://d3js.org/d3.v4.min.js"></script>
-    <script>
-      // Geometry
-
-      var EPS = 1e-6;
-
-      function isNumeric(val) {
-        return Number(parseFloat(val))==val;
-      }
-
-      var Vector = function(x, y) {
-        this.x = x || 0;
-        this.y = y || 0;
-      };
-
-      Vector.prototype.normalized = function() {
-        return Vector.div(this, Math.sqrt(Vector.dot(this, this)));
-      };
-
-      Vector.neg = function(v) {
-        return new Vector(-v.x, -v.y);
-      };
-
-      Vector.add = function(v1, v2) {
-        return new Vector(v1.x + v2.x, v1.y + v2.y);
-      };
-
-      Vector.sub = function(v1, v2) {
-        return new Vector(v1.x - v2.x, v1.y - v2.y);
-      };
-
-      Vector.mul = function(a, b) {
-        if (isNumeric(b)) { var tmp = a; a = b; b = tmp; }
-        if (isNumeric(a) && b instanceof Vector) {
-          return new Vector(a * b.x, a * b.y);
-        }
-        return undefined;
-      };
-
-      Vector.div = function(v, a) {
-        if (isNumeric(a) && v instanceof Vector) {
-          return new Vector(v.x / a, v.y / a);
-        }
-        return undefined;
-      };
-
-      Vector.dot = function(v1, v2) {
-        return v1.x * v2.x + v1.y * v2.y;
-      };
-
-      Vector.cross = function(v1, v2) {
-        return v1.x * v2.y - v1.y * v2.x;
-      };
-
-      var Line = function(n, c) {
-        // (n, v) + c = 0
-        this.n = n;
-        this.c = c;
-      };
-
-      Line.fromPointAndDirection = function(p, v) {
-        var n = new Vector(v.y, -v.x);
-        var c = -Vector.dot(p, n);
-        return new Line(n, c);
-      };
-
-      Line.fromTwoPoints = function(p1, p2) {
-        return Line.fromPointAndDirection(p1, Vector.sub(p2, p1));
-      };
-
-      var Circle = function(center, r) {
-        this.center = center;
-        this.r = r;
-      };
-
-      function projectPointToLine(p, line) {
-        var k = -(line.c + Vector.dot(line.n, p));
-        return Vector.add(p, Vector.mul(k, line.n));
-      };
-
-      function LineCircleIntersection(line, circle) {
-        var p = projectPointToLine(circle.center, line);
-        var c_p = Vector.sub(p, circle.center);
-        var c_p_2 = Vector.dot(c_p, c_p);
-        var r_2 = circle.r * circle.r;
-        if (c_p_2 > r_2 + EPS) {
-          return [];
-        }
-        if (c_p_2 > r_2 - EPS) {
-          return [p];
-        }
-
-        var dir = new Vector(line.n.y, -line.n.x);
-        var factor = Math.sqrt((r_2 - c_p_2) / Vector.dot(dir, dir));
-        var delta = Vector.mul(factor, dir);
-        return [Vector.add(p, delta), Vector.sub(p, delta)];
-      };
-    </script>
+    <script src="js/geometry.js"></script>
     <script>
       var WaveColor = function(wavelength, r, g, b, alpha) {
         this.wavelength = wavelength;
@@ -152,14 +56,8 @@
 
       // takes wavelength in nm and returns an rgba value
       function wavelengthToColor(wavelength) {
-        var r,
-        g,
-        b,
-        alpha,
-        colorSpace,
-        wl = wavelength,
-        gamma = 1;
-
+        var R, G, B, alpha;
+        var wl = wavelength;
 
         if (wl >= 380 && wl < 440) {
           R = -1 * (wl - 440) / (440 - 380);
@@ -248,17 +146,19 @@
 
       var raySegments = [];
       function update_ray(y) {
-          var src = new Vector(+source.attr('cx'), +source.attr('cy'));
+          var src = new geom.Vector(+source.attr('cx'), +source.attr('cy'));
 
           rays = [];
           for (var i = 0; i < rainbowColors.length; ++i) {
-            rays.push(new ColoredRay(src, new Vector(1, 0), rainbowColors[i]));
+            rays.push(new ColoredRay(
+                src, new geom.Vector(1, 0), rainbowColors[i]));
           }
           raySegments.length = 0;
           for (var i = 0; i < rays.length; ++i) {
             var ray = rays[i];
-            var line = Line.fromPointAndDirection(ray.src, ray.dir);
-            var lineIntersections = LineCircleIntersection(line, dropletCircle);
+            var line = geom.Line.fromPointAndDirection(ray.src, ray.dir);
+            var lineIntersections = geom.LineCircleIntersection(line,
+                                                                dropletCircle);
             if (lineIntersections.length == 1) {
               lineIntersections = [];
             }
@@ -268,18 +168,17 @@
 
             for (var j = 0; j < lineIntersections.length; ++j) {
               var p = lineIntersections[j];
-              var distance = Vector.dot(ray.dir, Vector.sub(p, ray.src));
-              if (distance > EPS && (typeof minDistance === 'undefined' ||
-                                     distance < minDistance)) {
+              var distance = geom.dotProduct(ray.dir, geom.vSub(p, ray.src));
+              if (distance > geom.EPS && (typeof minDistance === 'undefined' ||
+                                          distance < minDistance)) {
                 intersection = p;
                 minDistance = distance;
               }
             }
             
             if (typeof intersection === 'undefined') {
-              var dst = Vector.add(ray.src, Vector.mul(2000, ray.dir))
-              raySegments.push(
-                  new ColoredSegment(ray.src, dst, ray.color));
+              var dst = geom.vAdd(ray.src, geom.mul(2000, ray.dir))
+              raySegments.push(new ColoredSegment(ray.src, dst, ray.color));
               continue;
             }
             
@@ -287,23 +186,23 @@
                 new ColoredSegment(ray.src, intersection, ray.color));
 
             var newSrc = intersection;
-            var n = Vector.sub(intersection,
-                               dropletCircle.center).normalized();
+            var n = geom.vSub(intersection,
+                              dropletCircle.center).normalized();
             var ri = refractiveIndex(ray.color.wavelength);
-            if (Vector.dot(ray.dir, n) > 0) {
+            if (geom.dotProduct(ray.dir, n) > 0) {
               ri = 1 / ri;
-              n = Vector.neg(n);
+              n = geom.vNeg(n);
             }
 
             var reflDir =
-              Vector.sub(ray.dir, Vector.mul(2 * Vector.dot(ray.dir, n), n));
-            var cosThetaI = Vector.dot(n, Vector.neg(ray.dir));
-            var sinThetaI = Vector.cross(Vector.neg(ray.dir), n);
+              geom.vSub(ray.dir, geom.mul(2 * geom.dotProduct(ray.dir, n), n));
+            var cosThetaI = geom.dotProduct(n, geom.vNeg(ray.dir));
+            var sinThetaI = geom.crossProduct(geom.vNeg(ray.dir), n);
             var sinThetaT = sinThetaI / ri;
             var cosThetaT = Math.sqrt(1 - sinThetaT * sinThetaT);
-            var refrDir = Vector.add(
-                Vector.div(ray.dir, ri),
-                Vector.mul(cosThetaI / ri - cosThetaT, n)).normalized();
+            var refrDir = geom.vAdd(
+                geom.div(ray.dir, ri),
+                geom.mul(cosThetaI / ri - cosThetaT, n)).normalized();
             
             var reflS = (cosThetaI - ri * cosThetaT) /
                         (cosThetaI + ri * cosThetaT);
@@ -365,7 +264,7 @@
               .attr('stroke-width', 5);
       };
 
-      var dropletCircle = new Circle(new Vector(700, 300), 200);
+      var dropletCircle = new geom.Circle(new geom.Vector(700, 300), 200);
       var droplet = svg.append('circle')
           .attr('cx', dropletCircle.center.x)
           .attr('cy', dropletCircle.center.y)
