@@ -1,0 +1,397 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Физика радуги - демонстрация</title>
+
+    <style>
+      #container {
+        text-align: center;
+      }
+
+      #rainbow {
+        width: 1080px;
+        height: 758px;
+        display: inline-block;
+        border: solid grey 1px;
+        background: #444;
+      }
+      
+      #rainbow .ray {
+        z-index: 1;
+      }
+
+      line {
+        mix-blend-mode: screen;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="container">
+      <div>
+        <svg id="rainbow" width="1080" height="758">
+        </svg>
+      </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+    <script src="https://d3js.org/d3.v4.min.js"></script>
+    <script>
+      // Geometry
+
+      var EPS = 1e-6;
+
+      function isNumeric(val) {
+        return Number(parseFloat(val))==val;
+      }
+
+      var Vector = function(x, y) {
+        this.x = x || 0;
+        this.y = y || 0;
+      };
+
+      Vector.prototype.normalized = function() {
+        return Vector.div(this, Math.sqrt(Vector.dot(this, this)));
+      };
+
+      Vector.neg = function(v) {
+        return new Vector(-v.x, -v.y);
+      };
+
+      Vector.add = function(v1, v2) {
+        return new Vector(v1.x + v2.x, v1.y + v2.y);
+      };
+
+      Vector.sub = function(v1, v2) {
+        return new Vector(v1.x - v2.x, v1.y - v2.y);
+      };
+
+      Vector.mul = function(a, b) {
+        if (isNumeric(b)) { var tmp = a; a = b; b = tmp; }
+        if (isNumeric(a) && b instanceof Vector) {
+          return new Vector(a * b.x, a * b.y);
+        }
+        return undefined;
+      };
+
+      Vector.div = function(v, a) {
+        if (isNumeric(a) && v instanceof Vector) {
+          return new Vector(v.x / a, v.y / a);
+        }
+        return undefined;
+      };
+
+      Vector.dot = function(v1, v2) {
+        return v1.x * v2.x + v1.y * v2.y;
+      };
+
+      Vector.cross = function(v1, v2) {
+        return v1.x * v2.y - v1.y * v2.x;
+      };
+
+      var Line = function(n, c) {
+        // (n, v) + c = 0
+        this.n = n;
+        this.c = c;
+      };
+
+      Line.fromPointAndDirection = function(p, v) {
+        var n = new Vector(v.y, -v.x);
+        var c = -Vector.dot(p, n);
+        return new Line(n, c);
+      };
+
+      Line.fromTwoPoints = function(p1, p2) {
+        return Line.fromPointAndDirection(p1, Vector.sub(p2, p1));
+      };
+
+      var Circle = function(center, r) {
+        this.center = center;
+        this.r = r;
+      };
+
+      function projectPointToLine(p, line) {
+        var k = -(line.c + Vector.dot(line.n, p));
+        return Vector.add(p, Vector.mul(k, line.n));
+      };
+
+      function LineCircleIntersection(line, circle) {
+        var p = projectPointToLine(circle.center, line);
+        var c_p = Vector.sub(p, circle.center);
+        var c_p_2 = Vector.dot(c_p, c_p);
+        var r_2 = circle.r * circle.r;
+        if (c_p_2 > r_2 + EPS) {
+          return [];
+        }
+        if (c_p_2 > r_2 - EPS) {
+          return [p];
+        }
+
+        var dir = new Vector(line.n.y, -line.n.x);
+        var factor = Math.sqrt((r_2 - c_p_2) / Vector.dot(dir, dir));
+        var delta = Vector.mul(factor, dir);
+        return [Vector.add(p, delta), Vector.sub(p, delta)];
+      };
+    </script>
+    <script>
+      var WaveColor = function(wavelength, r, g, b, alpha) {
+        this.wavelength = wavelength;
+        this.r = r;
+        this.g = g;
+        this.b = b;
+        this.alpha = alpha;
+      };
+
+      WaveColor.prototype.toString = function() {
+        return "rgba(" + (this.r * 100) + "%,"
+                       + (this.g * 100) + "%,"
+                       + (this.b * 100) + "%, "
+                       + this.alpha + ")";
+      };
+
+      // takes wavelength in nm and returns an rgba value
+      function wavelengthToColor(wavelength) {
+        var r,
+        g,
+        b,
+        alpha,
+        colorSpace,
+        wl = wavelength,
+        gamma = 1;
+
+
+        if (wl >= 380 && wl < 440) {
+          R = -1 * (wl - 440) / (440 - 380);
+          G = 0;
+          B = 1;
+        } else if (wl >= 440 && wl < 490) {
+          R = 0;
+          G = (wl - 440) / (490 - 440);
+          B = 1;  
+        } else if (wl >= 490 && wl < 510) {
+          R = 0;
+          G = 1;
+          B = -1 * (wl - 510) / (510 - 490);
+        } else if (wl >= 510 && wl < 580) {
+          R = (wl - 510) / (580 - 510);
+          G = 1;
+          B = 0;
+        } else if (wl >= 580 && wl < 645) {
+          R = 1;
+          G = -1 * (wl - 645) / (645 - 580);
+          B = 0.0;
+        } else if (wl >= 645 && wl <= 780) {
+          R = 1;
+          G = 0;
+          B = 0;
+        } else {
+          R = 0;
+          G = 0;
+          B = 0;
+        }
+
+        // intensty is lower at the edges of the visible spectrum.
+        if (wl > 780 || wl < 380) {
+          alpha = 0;
+        } else if (wl > 700) {
+          alpha = (780 - wl) / (780 - 700);
+        } else if (wl < 420) {
+          alpha = (wl - 380) / (420 - 380);
+        } else {
+          alpha = 1;
+        }
+
+        return new WaveColor(wavelength, R, G, B, alpha);
+
+      }
+    </script>
+    <script>
+      var WAVELENGTH_MIN = 400;
+      var WAVELENGTH_MAX = 750;
+      //var RI_MIN = 1.3406;
+      //var RI_MAX = 1.3298;
+      var RI_MIN = 1.3406;
+      var RI_MAX = 1.3298;
+      var SPECTRUM_SIZE = 7;
+      var MIN_ALPHA = 0.01;
+
+      function refractiveIndex(wavelength) {
+        var alpha = (wavelength - WAVELENGTH_MIN) /
+                    (WAVELENGTH_MAX - WAVELENGTH_MIN);
+        return RI_MIN * (1 - alpha) + RI_MAX * alpha;
+      };
+
+      var white = new WaveColor(undefined, 1, 1, 1, 1);
+
+      var rainbowColors = [];
+      for (var i = 0; i < SPECTRUM_SIZE; ++i) {
+        var alpha = i / (SPECTRUM_SIZE - 1);
+        var wavelength =
+            WAVELENGTH_MIN + (WAVELENGTH_MAX - WAVELENGTH_MIN) * alpha;
+        rainbowColors.push(wavelengthToColor(wavelength));
+      }
+
+      var ColoredRay = function(src, dir, color) {
+        this.src = src;
+        this.dir = dir.normalized();
+        this.color = color;
+      };
+
+      var ColoredSegment = function(p1, p2, color) {
+        this.p1 = p1;
+        this.p2 = p2;
+        this.color = color;
+      };
+
+      var svg = d3.select('#rainbow');
+
+      var raySegments = [];
+      function update_ray(y) {
+          var src = new Vector(+source.attr('cx'), +source.attr('cy'));
+
+          rays = [];
+          for (var i = 0; i < rainbowColors.length; ++i) {
+            rays.push(new ColoredRay(src, new Vector(1, 0), rainbowColors[i]));
+          }
+          raySegments.length = 0;
+          for (var i = 0; i < rays.length; ++i) {
+            var ray = rays[i];
+            var line = Line.fromPointAndDirection(ray.src, ray.dir);
+            var lineIntersections = LineCircleIntersection(line, dropletCircle);
+            if (lineIntersections.length == 1) {
+              lineIntersections = [];
+            }
+
+            var intersection = undefined;
+            var minDistance = undefined;
+
+            for (var j = 0; j < lineIntersections.length; ++j) {
+              var p = lineIntersections[j];
+              var distance = Vector.dot(ray.dir, Vector.sub(p, ray.src));
+              if (distance > EPS && (typeof minDistance === 'undefined' ||
+                                     distance < minDistance)) {
+                intersection = p;
+                minDistance = distance;
+              }
+            }
+            
+            if (typeof intersection === 'undefined') {
+              var dst = Vector.add(ray.src, Vector.mul(2000, ray.dir))
+              raySegments.push(
+                  new ColoredSegment(ray.src, dst, ray.color));
+              continue;
+            }
+            
+            raySegments.push(
+                new ColoredSegment(ray.src, intersection, ray.color));
+
+            var newSrc = intersection;
+            var n = Vector.sub(intersection,
+                               dropletCircle.center).normalized();
+            var ri = refractiveIndex(ray.color.wavelength);
+            if (Vector.dot(ray.dir, n) > 0) {
+              ri = 1 / ri;
+              n = Vector.neg(n);
+            }
+
+            var reflDir =
+              Vector.sub(ray.dir, Vector.mul(2 * Vector.dot(ray.dir, n), n));
+            var cosThetaI = Vector.dot(n, Vector.neg(ray.dir));
+            var sinThetaI = Vector.cross(Vector.neg(ray.dir), n);
+            var sinThetaT = sinThetaI / ri;
+            var cosThetaT = Math.sqrt(1 - sinThetaT * sinThetaT);
+            var refrDir = Vector.add(
+                Vector.div(ray.dir, ri),
+                Vector.mul(cosThetaI / ri - cosThetaT, n)).normalized();
+            
+            var reflS = (cosThetaI - ri * cosThetaT) /
+                        (cosThetaI + ri * cosThetaT);
+            reflS *= reflS;
+
+            var reflP = (cosThetaT - ri * cosThetaI) /
+                        (cosThetaT + ri * cosThetaI);
+            reflP *= reflP;
+
+            var refl = (reflS + reflP) / 2;
+            var refr = 1 - refl;
+
+            var reflAlpha = ray.color.alpha * refl;
+            if (reflAlpha >= MIN_ALPHA) {
+              rays.push(new ColoredRay(
+                  newSrc,
+                  reflDir,
+                  new WaveColor(ray.color.wavelength,
+                                ray.color.r,
+                                ray.color.g,
+                                ray.color.b,
+                                reflAlpha)));
+            }
+
+            var refrAlpha = ray.color.alpha * refr;
+            if (refrAlpha >= MIN_ALPHA) {
+              rays.push(new ColoredRay(
+                  newSrc,
+                  refrDir,
+                  new WaveColor(ray.color.wavelength,
+                                ray.color.r,
+                                ray.color.g,
+                                ray.color.b,
+                                refrAlpha)));
+            }
+          }
+
+
+          var segmentElements = svg.selectAll('.ray').data(raySegments);
+
+          segmentElements.enter().append('line').attr('class', 'ray')
+              .attr('x1', function(segment) { return segment.p1.x; })
+              .attr('y1', function(segment) { return segment.p1.y; })
+              .attr('x2', function(segment) { return segment.p2.x; })
+              .attr('y2', function(segment) { return segment.p2.y; })
+              .attr('stroke',
+                    function(segment) { return segment.color.toString(); })
+              .attr('stroke-width', 5);
+
+          segmentElements.exit().remove();
+
+          segmentElements
+              .attr('x1', function(segment) { return segment.p1.x; })
+              .attr('y1', function(segment) { return segment.p1.y; })
+              .attr('x2', function(segment) { return segment.p2.x; })
+              .attr('y2', function(segment) { return segment.p2.y; })
+              .attr('stroke',
+                    function(segment) { return segment.color.toString(); })
+              .attr('stroke-width', 5);
+      };
+
+      var dropletCircle = new Circle(new Vector(700, 300), 200);
+      var droplet = svg.append('circle')
+          .attr('cx', dropletCircle.center.x)
+          .attr('cy', dropletCircle.center.y)
+          .attr('r', dropletCircle.r)
+          .attr('stroke', '#888')
+          .attr('fill', '#666');
+
+      var source = svg.append('circle')
+          .attr('cx', 30)
+          .attr('cy', 50)
+          .attr('r', 10)
+          .attr('stroke', 'none')
+          .attr('fill', '#fff');
+
+      var source_drag_handler = d3.drag().on('drag', function(d) {
+          var source = d3.select(this);
+          r = +source.attr('r');
+          var y = d3.event.y;
+          y = Math.max(r, y);
+          y = Math.min(+svg.attr('height') - r, y);
+          source.attr('cy', y); 
+          update_ray(y);
+      });
+      source_drag_handler(source);
+
+      update_ray(50);
+    </script>
+  </body>
+</html>
