@@ -1,7 +1,10 @@
 var physics = physics || {};
 
 (function(physics) {
-  physics.Wave = class Wave {
+  physics.MIN_OPTICAL_WAVELENGTH = 400;
+  physics.MAX_OPTICAL_WAVELENGTH = 750;
+
+  physics.EMWave = class EMWave {
     constructor(wavelength, intensity_s, intensity_p) {
       this.wavelength = wavelength;
       this.intensity_s = intensity_s;
@@ -62,6 +65,14 @@ var physics = physics || {};
           r, g, b, (this.intensity_s + this.intensity_p) * intensity_factor);
     }
   };
+
+  physics.EMRay = class EMRay {
+    constructor(source, direction, wave) {
+      this.source = source;
+      this.direction = direction;
+      this.wave = wave;
+    }
+  };
   
   physics.RefractiveMaterial = class RefractiveMaterial {
     constructor(points) {
@@ -95,11 +106,39 @@ var physics = physics || {};
     }
   };
 
-  var WAVELENGTH_MIN = 400;
-  var WAVELENGTH_MAX = 750;
   physics.material = {};
   physics.material.water = new physics.RefractiveMaterial([
-      [WAVELENGTH_MIN, 1.3406],
-      [WAVELENGTH_MAX, 1.3298],
+      [physics.MIN_OPTICAL_WAVELENGTH, 1.3406],
+      [physics.MAX_OPTICAL_WAVELENGTH, 1.3298],
   ]);
+
+  physics.getRefractedVector = function(direction, n, ri1, ri2) {
+    let cosThetaI = geom.dotProduct(n, geom.vNeg(direction));
+    let sinThetaI = geom.crossProduct(geom.vNeg(direction), n);
+    let sinThetaT = sinThetaI * ri1/ ri2;
+    let cosThetaT = Math.sqrt(1 - sinThetaT * sinThetaT);
+    return geom.vAdd(
+        geom.mul(direction, ri1 / ri2),
+        geom.mul(cosThetaI * ri1 / ri2 - cosThetaT, n)).normalized();
+  };
+
+  physics.fresnel = function(direction, n, r1, r2) {
+    let cosThetaI = geom.dotProduct(n, geom.vNeg(direction));
+    let sinThetaI = geom.crossProduct(geom.vNeg(direction), n);
+    let sinThetaT = sinThetaI * ri1/ ri2;
+    let cosThetaT = Math.sqrt(1 - sinThetaT * sinThetaT);
+
+    let reflectedDir =
+      geom.vSub(direction, geom.mul(2 * geom.dotProduct(direction, n), n));
+    let refractedDir = geom.vAdd(
+        geom.mul(direction, ri1 / ri2),
+        geom.mul(cosThetaI * ri1 / ri2 - cosThetaT, n)).normalized();
+
+    let reflS = (cosThetaI - ri * cosThetaT) / (cosThetaI + ri * cosThetaT);
+    reflS *= reflS;
+    let reflP = (cosThetaT - ri * cosThetaI) / (cosThetaT + ri * cosThetaI);
+    reflP *= reflP;
+
+    // Направление, новая интенсивность (wave)
+  };
 })(physics);

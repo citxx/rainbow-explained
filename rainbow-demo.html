@@ -40,8 +40,6 @@
     <script src="js/color.js"></script>
     <script src="js/physics.js"></script>
     <script>
-      var WAVELENGTH_MIN = 400;
-      var WAVELENGTH_MAX = 750;
       var SPECTRUM_SIZE = 12;
       var MIN_ALPHA = 0.01;
       var MATERIAL = physics.material.water;
@@ -49,16 +47,10 @@
       var rainbowWaves = [];
       for (var i = 0; i < SPECTRUM_SIZE; ++i) {
         var alpha = i / (SPECTRUM_SIZE - 1);
-        var wavelength =
-            WAVELENGTH_MIN + (WAVELENGTH_MAX - WAVELENGTH_MIN) * alpha;
-        rainbowWaves.push(new physics.Wave(wavelength));
+        var wavelength = physics.MIN_OPTICAL_WAVELENGTH + (
+            physics.MAX_OPTICAL_WAVELENGTH - physics.MIN_OPTICAL_WAVELENGTH) * alpha;
+        rainbowWaves.push(new physics.EMWave(wavelength));
       }
-
-      var WaveRay = function(src, dir, wave) {
-        this.src = src;
-        this.dir = dir.normalized();
-        this.wave = wave;
-      };
 
       var ColoredSegment = function(p1, p2, color) {
         this.p1 = p1;
@@ -76,18 +68,18 @@
           //for (var k = 0; k < 50; ++k) {
           //  var point = geom.vAdd(src, new geom.Vector(0, 0.5 * k));
           //  for (var i = 0; i < rainbowWaves.length; ++i) {
-          //    rays.push(new WaveRay(
+          //    rays.push(new physics.EMRay(
           //        point, new geom.Vector(1, 0), rainbowWaves[i]));
           //  }
           //}
           for (var i = 0; i < rainbowWaves.length; ++i) {
-            rays.push(new WaveRay(
+            rays.push(new physics.EMRay(
                 src, new geom.Vector(1, 0), rainbowWaves[i]));
           }
           raySegments.length = 0;
           for (var i = 0; i < rays.length; ++i) {
             var ray = rays[i];
-            var line = geom.Line.fromPointAndDirection(ray.src, ray.dir);
+            var line = geom.Line.fromPointAndDirection(ray.source, ray.direction);
             var lineIntersections = geom.LineCircleIntersection(line,
                                                                 dropletCircle);
             if (lineIntersections.length == 1) {
@@ -99,7 +91,7 @@
 
             for (var j = 0; j < lineIntersections.length; ++j) {
               var p = lineIntersections[j];
-              var distance = geom.dotProduct(ray.dir, geom.vSub(p, ray.src));
+              var distance = geom.dotProduct(ray.direction, geom.vSub(p, ray.source));
               if (distance > geom.EPS && (typeof minDistance === 'undefined' ||
                                           distance < minDistance)) {
                 intersection = p;
@@ -108,32 +100,33 @@
             }
             
             if (typeof intersection === 'undefined') {
-              var dst = geom.vAdd(ray.src, geom.mul(2000, ray.dir))
-              raySegments.push(new ColoredSegment(ray.src, dst, ray.wave.color));
+              var dst = geom.vAdd(ray.source, geom.mul(2000, ray.direction))
+              raySegments.push(new ColoredSegment(ray.source, dst, ray.wave.color));
               continue;
             }
             
             raySegments.push(
-                new ColoredSegment(ray.src, intersection, ray.wave.color));
+                new ColoredSegment(ray.source, intersection, ray.wave.color));
 
             var newSrc = intersection;
             var n = geom.vSub(intersection,
                               dropletCircle.center).normalized();
             var ri = MATERIAL.refractiveIndexForWavelength(ray.wave.wavelength);
-            if (geom.dotProduct(ray.dir, n) > 0) {
+            if (geom.dotProduct(ray.direction, n) > 0) {
               ri = 1 / ri;
               n = geom.vNeg(n);
             }
 
             var reflDir =
-              geom.vSub(ray.dir, geom.mul(2 * geom.dotProduct(ray.dir, n), n));
-            var cosThetaI = geom.dotProduct(n, geom.vNeg(ray.dir));
-            var sinThetaI = geom.crossProduct(geom.vNeg(ray.dir), n);
+              geom.vSub(ray.direction, geom.mul(2 * geom.dotProduct(ray.direction, n), n));
+            var cosThetaI = geom.dotProduct(n, geom.vNeg(ray.direction));
+            var sinThetaI = geom.crossProduct(geom.vNeg(ray.direction), n);
             var sinThetaT = sinThetaI / ri;
             var cosThetaT = Math.sqrt(1 - sinThetaT * sinThetaT);
-            var refrDir = geom.vAdd(
-                geom.div(ray.dir, ri),
-                geom.mul(cosThetaI / ri - cosThetaT, n)).normalized();
+            /*var refrDir = geom.vAdd(
+                geom.div(ray.direction, ri),
+                geom.mul(cosThetaI / ri - cosThetaT, n)).normalized();*/
+            var refrDir = physics.getRefractedVector(ray.direction, n, 1, ri);
             
             var reflS = (cosThetaI - ri * cosThetaT) /
                         (cosThetaI + ri * cosThetaT);
@@ -148,18 +141,18 @@
 
             var reflAlpha = ray.wave.color.alpha * refl;
             if (reflAlpha >= MIN_ALPHA) {
-              rays.push(new WaveRay(
+              rays.push(new physics.EMRay(
                   newSrc,
                   reflDir,
-                  new physics.Wave(ray.wave.wavelength, reflAlpha)));
+                  new physics.EMWave(ray.wave.wavelength, reflAlpha)));
             }
 
             var refrAlpha = ray.wave.color.alpha * refr;
             if (refrAlpha >= MIN_ALPHA) {
-              rays.push(new WaveRay(
+              rays.push(new physics.EMRay(
                   newSrc,
                   refrDir,
-                  new physics.Wave(ray.wave.wavelength, refrAlpha)));
+                  new physics.EMWave(ray.wave.wavelength, refrAlpha)));
             }
           }
 
